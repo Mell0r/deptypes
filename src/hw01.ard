@@ -6,8 +6,7 @@
 
 \func apply (f : Nat -> Nat) (x : Nat) => f x
 
-\func compose (f g : Nat -> Nat) (x : Nat) => f (g x)
-
+\func compose (f g : Nat -> Nat) (x : Nat) => f (g x
 \func flip (f : Nat -> Nat -> Nat) (x : Nat) (y : Nat) => f y x
 
 \func second' => flip (second 0)
@@ -55,7 +54,7 @@
 
 -- 5. Определите || через if.
 
-\func \infixr 2 || (x y : Bool) : Bool => if x true (if y true false)
+\func \infixr 2 || (x y : Bool) : Bool => if x true y
 
 \func orTest1 : false || false = false => idp
 \func orTest2 : false || true = true => idp
