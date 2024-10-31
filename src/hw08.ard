@@ -1,37 +1,272 @@
+\import Algebra.Semiring
+\import Arith.Nat
 \import Data.Bool
-\import Data.List \hiding (headDef)
+\import Data.List
+\import Function.Meta
+\import Meta
+\import Order.PartialOrder
+\import Paths.Meta
+\import hw03 (suc*)
+\import hw04
+\import hw05
 \import hw07
+\import lect02 (reverse)
+\import lect06 (isPos)
+\import lect07 (filter)
 \import lect08
 \import Order.LinearOrder
+\import Paths (*>, inv, transport)
 \open LinearOrder
+\open List
+\open Nat (+, *, -)
 
 -- 1. Реализуйте функцию filter и докажите ее корректность, то есть, что выполнены следующие условия:
 --    * filter p xs является подсписком xs
 --    * Все элементы filter p xs удовлетворяют предикату p
 --    * Любой подсписок xs с тем же свойством является подсписком filter p xs
 
+\func all {A : \Type} (p : A -> Bool) (xs : List A) : Bool \elim xs
+  | nil => true
+  | x :: xs => p x and all p xs
+
+\func allFilteredP {A : \Type} (p : A -> Bool) (xs : List A)
+  : all p (filter p xs) = true \elim xs
+  | nil => idp
+  | x :: xs => cases (p x arg addPath) \with {
+    | true, p' => rewrite p' $ allFilteredP p xs
+    | false, p' => allFilteredP p xs
+  }
+
+\func InXAndP->InFiltered
+  {A : \Type}
+  {xs : List A}
+  {y : A}
+  {p : A -> Bool}
+  (proofIn : In y xs)
+  (proofP : p y = true)
+  : In y (filter p xs) \elim xs
+  | nil => \case proofIn
+  | x :: xs => cases (p x arg addPath, proofIn) \with {
+    | false, px, lastIn x=y => \case inv (transport (\lam a => p a = false) x=y px) *> proofP
+    | false, _, prevIn prevInProof => InXAndP->InFiltered prevInProof proofP
+    | true, _, lastIn x=y => lastIn x=y
+    | true, px, prevIn prevInProof => prevIn $ InXAndP->InFiltered prevInProof proofP
+  }
+
+\func AllFilteredP->Sublist
+  {A : \Type}
+  (p : A -> Bool)
+  (xs ys : List A)
+  (proofSublist : Sublist ys xs)
+  (proofAllP : all p ys = true)
+  : Sublist ys (filter p xs) \elim ys
+  | nil => nilSublist
+  | y :: ys => cases (p y arg addPath, proofSublist) \with {
+    | false, py, _ => \case transport (\lam a => a and all p ys = true) py proofAllP
+    | true, py, xInYs proofIn proofSublist =>
+      xInYs
+        (InXAndP->InFiltered proofIn py)
+        (AllFilteredP->Sublist
+          p
+          xs
+          ys
+          proofSublist
+          (transport (\lam a => a and all p ys = true) py proofAllP))
+  }
+
 -- 2. Докажите, что Perm l1 l2 тогда и только тогда, когда Insertion.sort l1 = Insertion.sort l2
+
+\func perm<->sortedEq
+  {A : Dec}
+  (xs ys : List A)
+  : Perm xs ys <-> (Insertion.sort xs = Insertion.sort ys) => (
+  perm->sortedEq, sortedEq->perm
+) \where {
+  \lemma perm->sortedEq {xs ys : List A} (proof : Perm xs ys)
+    : Insertion.sort xs = Insertion.sort ys
+    | nil, nil, perm-nil => idp
+    | x :: xs, y :: ys, perm-cons x=y permCons =>
+      rewrite x=y $ pmap (Insertion.sort.insert y) $
+        perm->sortedEq permCons
+    | x :: (x' :: xs), y :: (y' :: ys), perm-swap x=y' x'=y xs=ys =>
+      rewrite (x=y', x'=y, inv $ xs=ys) $
+        Insertion.sort.insert-comm y' y (Insertion.sort-sorted xs)
+    | xs, ys, perm-trans {zs} permXsZs permZsYs =>
+      perm->sortedEq permXsZs *> perm->sortedEq permZsYs
+
+  \func perm-commutativity
+    {xs ys : List A}
+    (proofPerm : Perm xs ys)
+    : Perm ys xs \elim xs, ys, proofPerm
+    | nil, nil, perm-nil => perm-nil
+    | x :: xs, y :: ys, perm-cons x=y proofConst =>
+      perm-cons (inv x=y) $ perm-commutativity proofConst
+    | x :: (x' :: xs), y :: (y' :: ys), perm-swap x=y' x'=y xs=ys =>
+      perm-swap (inv x'=y) (inv x=y') (inv xs=ys)
+    | xs, ys, perm-trans permXsZs permZsYs =>
+      perm-trans
+        (perm-commutativity permZsYs)
+        (perm-commutativity permXsZs)
+
+  \func sortedEq->perm
+    {xs ys : List A}
+    (proof : Insertion.sort xs = Insertion.sort ys)
+    : Perm xs ys => perm-trans (Insertion.sort-perm xs) $
+      rewrite proof $
+      perm-commutativity (Insertion.sort-perm ys)
+}
 
 -- 3. Докажите, что спецификация "результат является перестановкой входа и отсортирован" является полной для функции sort
 
-\func completeness {A : Dec} (sort : List A -> List A) (l : List A) (p : Perm l (sort l)) (s : Sorted (sort l))
-  : sort l = Insertion.sort l => {?}
+\func completeness
+  {A : Dec}
+  (sort : List A -> List A)
+  (xs : List A)
+  (p : Perm xs (sort xs)) (s : Sorted (sort xs))
+  : sort xs = Insertion.sort xs =>
+    inv $ perm<->sortedEq.perm->sortedEq p *> sortedSorted=itself s
+  \where {
+    \lemma x<=headInsertEqCons
+      {A : Dec}
+      {xs : List A}
+      {x : A}
+      (x<=head : x <= headDef x xs)
+      : Insertion.sort.insert x xs = x :: xs => cases (xs arg addPath) \with {
+      | nil, p => idp
+      | x' :: xs1, p =>
+        \let
+          | x<=x' => rewrite p x<=head
+          | q => dec<=_reduce x<=x'
+        \in rewrite q idp
+    }
+
+    \lemma consSorted->insertEqCons
+      {A : Dec}
+      {xs : List A}
+      {x : A}
+      (proofSorted : Sorted (x :: xs))
+      : Insertion.sort.insert x xs = x :: xs \elim proofSorted
+      | sorted-cons x<=head proofSorted => x<=headInsertEqCons x<=head
+
+    \lemma sortedSorted=itself {A : Dec} {xs : List A} (proofSorted : Sorted xs)
+      : Insertion.sort xs = xs \elim xs, proofSorted
+      | nil, sorted-nil => idp
+      | x :: nil, _ => idp
+      | x :: x' :: xs, sorted-cons x<=head proofSorted =>
+        rewrite (
+          sortedSorted=itself (
+            Sorted.suffix {A} {x' :: nil} {xs} proofSorted
+          ),
+          consSorted->insertEqCons proofSorted,
+          dec<=_reduce x<=head
+        ) idp
+  }
 
 -- 4. Определите факториал через хвостовую рекурсию
 --    Докажите, что он равен обычному определению факториала
+
+\func factorial (n : Nat) => factorialAccumulated n 1
+  \where {
+    \func factorialAccumulated (n : Nat) (fac : Nat) : Nat \elim n
+      | 0 => fac
+      | suc n => factorialAccumulated n (suc n * fac)
+  }
+
+\func factorial=fac : factorial = fac => ext (\lam n => induction n 1 *> NatSemiring.ide-left)
+  \where {
+    \lemma induction (n a : Nat)
+      : factorial.factorialAccumulated n a = a * fac n \elim n
+      | 0 => idp
+      | suc n => rewriteI (
+        NatSemiring.*-assoc,
+        inv $ induction n (suc n * a)
+      ) $ pmap (__ * fac n) $ suc* _ _ *> pmap (__ + a) NatSemiring.*-comm
+  }
 
 -- 5. Определите функцию, которая проверяет правильность скобочной последовательности
 --    Докажите ее корректность
 
 \data Paren | Left | Right
 
-\func isBalanced (xs : List Paren) : Bool
-  => {?}
+\func plus1 (x : Int) : Int \elim x
+  | pos x => pos (suc x)
+  | neg (suc x) => neg x
+
+\func minus1 (x : Int) : Int \elim x
+  | pos (suc x) => pos x
+  | 0 => neg 1
+  | neg x => neg (suc x)
+
+\func nonNeg (a : Int) : Bool
+  | neg 0 => true
+  | pos _ => true
+  | neg (suc _) => false
+
+\func reverse {A : \Type} (xs : List A) : List A => reverseAccumulated nil xs
+  \where {
+    \func reverseAccumulated (acc : List A) (xs : List A) : List A \elim xs
+      | nil => acc
+      | x :: xs => reverseAccumulated (x :: acc) xs
+  }
+
+\func isBalanced (xs : List Paren) : Bool => all nonNeg (prefBalance nil xs) \where {
+  \func prefBalance (acc : List Int) (xs : List Paren) : List Int \elim xs
+    | nil => acc
+    | Left :: xs => prefBalance (plus1 (headDef (pos 0) acc) :: acc) xs
+    | Right :: xs => prefBalance (minus1 (headDef (pos 0) acc) :: acc) xs
+
+  --  \func isBalancedCounted (xs : List Paren) (balance : Nat) : \Sigma Bool Nat
+  --    | nil, 0 => (true, 0)
+  --    | nil, b => (false, b)
+  --    | Left :: xs, b => isBalancedCounted xs (suc b)
+  --    | Right :: xs, 0 => (false, 0)
+  --    | Right :: xs, suc b => isBalancedCounted xs b
+  --  \lemma alwaysPositiveBalance->isBalanced
+  --    {xs : List Paren}
+  --    (p : \Pi
+  --      (ys : List Paren)
+  --      {zs : List Paren}
+  --      {n : Nat}
+  --      (prefProof : ys ++ zs = xs) -> (isBalancedCounted ys 0).2 = suc n)
+  --    : isBalanced xs = true =>
+  --    unfold isBalanced {?}
+  --  \func removeCorrectPrefix
+  --    {xs : List Paren}
+  --    (ys : List Paren)
+  --    (proof : isBalanced xs = true)
+  --    : isBalancedCounted (xs ++ ys) = isBalancedCounted ys =>
+  --    {?}
+  \lemma isBalancedParentesis
+    {xs : List Paren}
+    (proof : isBalanced xs = true)
+    : isBalanced (Left :: xs ++ Right :: nil) = true
+    => unfold isBalanced {?}
+}
 
 \data Balanced (xs : List Paren) \with
   | nil => nil-balanced
-  | :: Left xs => cons-balanced {ys : List Paren} (Balanced ys) (xs = ys ++ Right :: nil)
+  | Left :: xs => cons-balanced {ys : List Paren} (Balanced ys) (xs = ys ++ Right :: nil)
   | xs => append-balanced {ys zs : List Paren} (Balanced ys) (Balanced zs) (xs = ys ++ zs)
 
-\func isBalanced-correct (xs : List Paren) : (isBalanced xs = true) <-> Balanced xs
-  => {?}
+\func isBalanced-correct
+  (xs : List Paren)
+  : (isBalanced xs = true) <-> Balanced xs => (
+  isBalanced->Balanced,
+  Balanced->isBalanced
+)
+  \where {
+    \func Balanced->isBalanced
+      {xs : List Paren}
+      (BalancedProof : Balanced xs)
+      : isBalanced xs = true \elim xs, BalancedProof
+      | nil, nil-balanced => idp
+      | Left :: xs, cons-balanced {ys} b p =>
+        \let isBalancedYs => Balanced->isBalanced b
+        \in rewrite p {?}
+      | xs, append-balanced b b1 p => {?}
+
+    \func isBalanced->Balanced
+      {xs : List Paren}
+      (BalancedProof : isBalanced xs = true)
+      : Balanced xs => {?}
+  }
