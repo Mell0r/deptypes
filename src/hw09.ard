@@ -1,32 +1,151 @@
-\import Data.Maybe
+\import Data.Maybe \hiding (maybe)
+\import Function
+\import Function.Meta
+\import Meta
+\import Paths
+\import Paths.Meta
+\import lect06 (fmap)
 \import lect07 (Decide)
 \import lect09
 
 -- 1. Докажите, что оператор >>= ассоциативен для Monad Term
 
-\func Term->>=-assoc {A B C : \Set} (t : Term A) (k : A -> Term B) (l : B -> Term C)
-  : t >>= k >>= l = {Term C} t >>= (\lam a => k a >>= l) => {?}
+-- \func Term->>=-assoc
+--   {A B C : \Set}
+--   (t : Term A)
+--   (k : A -> Term B)
+--   (l : B -> Term C)
+--   : t >>= k >>= l = {Term C} t >>= (\lam a => k a >>= l) \elim t
+--   | unit => idp
+--   | var v => idp
+--   | app t1 t2 => pmap2 app (Term->>=-assoc t1 k l) (Term->>=-assoc t2 k l)
+--   | lam t => unfold (>>=) $ pmap lam (Term->>=-assoc _ _ _ *>
+--   pmap (t >>= __) (ext $ \lam m => cases m \with {
+--     | nothing => idp
+--     | just a => termMapF=FindideBind _ _ _ *> termMap>>=-comm _ _ _
+--   }))
+--   \where {
+--     \lemma termMapJust>>=maybe=id
+--       {B C : \Set}
+--       (t : Term B)
+--       (mb : Term $ Maybe C)
+--       (f : B -> Term $ Maybe C)
+--       : termMap just t >>= maybe mb f = t >>= f \elim t
+--       | unit => idp
+--       | var v => idp
+--       | app t1 t2 => pmap2 app
+--           (termMapJust>>=maybe=id _ _ _)
+--           (termMapJust>>=maybe=id _ _ _)
+--       | lam t => unfold (>>=) $ pmap lam $ {?}
+
+--     \lemma termMapF=FindideBind
+--       {A B C : \Set}
+--       (t : Term A)
+--       (g : B -> Term C)
+--       (f : A -> B)
+--       : (termMap f t) >>= g = t >>= (\lam a => g (f a)) \elim t
+--       | unit => idp
+--       | var v => idp
+--       | app t1 t2 => pmap2 app
+--           (termMapF=FindideBind _ _ _)
+--           (termMapF=FindideBind _ _ _)
+--       | lam t => pmap lam $ inv $ >>=liftM=liftMinside>>= _ _ *> {?}
+--
+--     \lemma >>=liftM=liftMinside>>=
+--       {A C : \Set}
+--       (f : A -> Term C)
+--       (t : Term $ Maybe A)
+--       : t >>= liftM (\lam a => f a) = t >>= \lam a => liftM f a => idp
+--
+--     \lemma termMap>>=-comm
+--       {A B C : \Set}
+--       (t : Term A)
+--       (f : A -> Term B)
+--       (g : B -> C)
+--       : t >>= (\lam a => termMap g (f a)) = termMap g (t >>= f) \elim t
+--       | unit => idp
+--       | var v => idp
+--       | app t1 t2 => pmap2 app
+--           (termMap>>=-comm _ _ _)
+--           (termMap>>=-comm _ _ _)
+--       | lam t => {?}
+--   }
 
 -- 2. Определите отношение многошаговой редукции на Term
 
-\func Red {V : \Set} (t s : Term V) : \Type => {?}
+\data Red {V : \Set} (t s : Term V)
+  | step0 (t = s)
+  | stepN (q : Term V) (Red1 t q) (Red q s)
 
 -- 3. Стратегия редукции -- это функция, которая каждому терму сопоставляет либо некоторый терм,
 --    к которому он редуцируется за 1 шаг, либо доказательство, что таких термов нет
 --    Определите любую стратегию редукции
 
-\func strategy {V : \Set} (t : Term V) : Decide (\Sigma (s : Term V) (Red1 t s)) => {?}
+\open Decide
+\func normalRed {V : \Set} (t : Term V)
+  : Decide (\Sigma (s : Term V) (Red1 t s)) \elim t
+  | unit => no $ \lam (t, proof) => \case proof
+  | var v => no $ \lam (t, proof) => \case proof
+  | app (lam t1) t2 => \case normalRed (lam t1) \with {
+    | yes (s, p) => yes (app s t2, red-left p idp)
+    | no f => yes (t1 >>= maybe t2 var, beta t1 idp idp)
+  }
+  | app unit t2 => \case normalRed t2 \with {
+    | yes (s, p) => yes (app unit s, red-right idp p)
+    | no f => no $ \lam (s', p) => cases (s', p) \with {
+      | _, beta f1 p1 p2 => \case p1
+      | app s'1 s'2, red-left x2 p1 => \case x2
+      | app s'1 s'2, red-right p1 x2 => f (s'2, x2)
+    }
+  }
+  | app (var v) t2 => \case normalRed t2 \with {
+    | yes (s, p) => yes (app (var v) s, red-right idp p)
+    | no f => no $ \lam (s', p) => cases (s', p) \with {
+      | _, beta f1 p1 p2 => \case p1
+      | app s'1 s'2, red-left x2 p1 => \case x2
+      | app s'1 s'2, red-right p1 x2 => f (s'2, x2)
+    }
+  }
+  | app (app t11 t12) t2 => \case normalRed (app t11 t12) \with {
+    | yes (s, p) => yes (app s t2, red-left p idp)
+    | no f => \case normalRed t2 \with {
+      | yes (s, p) => yes (app (app t11 t12) s, red-right idp p)
+      | no f' => no $ \lam (s', p) => cases (s', p) \with {
+        | _, beta f1 p1 p2 => \case p1
+        | app x x1, red-left x2 p1 => f (x, x2)
+        | app x x1, red-right p1 x2 => f' (x1, x2)
+      }
+    }
+  }
+  | lam t => \case normalRed t \with {
+    | yes (s, p) => yes (lam s, red-lam p)
+    | no f => no $ \lam (s', p) => cases (s', p) \with {
+      | lam x, red-lam x1 => f (x, x1)
+    }
+  }
 
 -- 4. Докажите, что подтермы достижимого терма достижимы
 
-\func appAccLeft {V : \Set} {t s : Term V} (a : Acc Red1 (app t s)) : Acc Red1 t
-  => {?}
+\func appAccLeft
+  {V : \Set}
+  {t s : Term V}
+  (a : Acc Red1 (app t s))
+  : Acc Red1 t \elim a
+  | acc f => acc $ \lam a' red => appAccLeft $ f (app a' s) (red-left red idp)
 
-\func appAccRight {V : \Set} {t s : Term V} (a : Acc Red1 (app t s)) : Acc Red1 s
-  => {?}
+\func appAccRight
+  {V : \Set}
+  {t s : Term V}
+  (a : Acc Red1 (app t s))
+  : Acc Red1 s \elim a
+  | acc f => acc $ \lam a' red => appAccRight $ f (app t a') (red-right idp red)
 
-\func subLamAcc {V : \Set} {t : Term (Maybe V)} (a : Acc Red1 (lam t)) : Acc Red1 t
-  => {?}
+\func subLamAcc
+  {V : \Set}
+  {t : Term (Maybe V)}
+  (a : Acc Red1 (lam t))
+  : Acc Red1 t \elim a
+  | acc f => acc $ \lam a' red => subLamAcc $ f (lam a') (red-lam red)
 
 -- 5. Докажите следующую обобщенную лемму о подстановке и выведите из нее обычную версию:
 --    если Г, x : A |- b : B и Г |- a : A, то Г |- b[a/x] : B
