@@ -1,25 +1,49 @@
 \import Data.Bool
 \import Function
-\import Logic (<->)
+\import Function.Meta
+\import Logic (<->, prop-isProp)
+\import Paths (pmap)
+\import Paths.Meta
 \import lect11
 
 -- 1. Докажите, что если A : \Prop, то Trunc A эквивалентен A
 
-\func trunc-prop {A : \Prop} : Trunc A <-> A => {?}
+\func trunc-prop {A : \Prop} : Trunc A <-> A => (
+  \lam a => \case a \with { | trunc a => a },
+  trunc
+)
 
 -- 2. Докажите следующий закон де Моргана
 
-\func deMorgan (A B C : \Prop) : (\Sigma A (B `Or` C)) <-> ((\Sigma A B) `Or` (\Sigma A C)) => {?}
+\func deMorgan
+  (A B C : \Prop)
+  : (\Sigma A (B `Or` C)) <-> ((\Sigma A B) `Or` (\Sigma A C)) => (
+  \lam (a, orBC) => \case orBC \with {
+    | inl b => inl (a, b)
+    | inr c => inr (a, c)
+  },
+  \lam or => \case or \with {
+    | inl (a, b) => (a, inl b)
+    | inr (a, c) => (a, inr c)
+  }
+)
 
 -- 3. Определите элиминатор для Or через Or-rec, не используя паттерн матчинг на Or
 
-\func Or-elim {A B : \Prop} (C : Or A B -> \Prop)
-              (f : \Pi (x : A) -> C (inl x)) (g : \Pi (y : B) -> C (inr y))
-              (p : A `Or` B) : C p => {?}
+\func Or-elim
+  {A B : \Prop}
+  (C : Or A B -> \Prop)
+  (f : \Pi (x : A) -> C (inl x))
+  (g : \Pi (y : B) -> C (inr y))
+  (p : A `Or` B)
+  : C p => Or-rec
+    (\lam a => transport C (prop-isProp (inl a) p) (f a))
+    (\lam b => transport C (prop-isProp (inr b) p) (g b))
+    p
 
 -- 4. Докажите, что тип утверждений является множеством
 
-\func prop-isSet : isSet \Prop => {?}
+\func prop-isSet : isSet \Prop => \lam _ _ => pathInProp
 
 -- 5. Докажите, что функции Prop1-to-Prop2 и Prop2-to-Prop1 взаимно обратны и, как следствие, что Prop1 = Prop2
 
@@ -28,9 +52,18 @@
 --     что если h o f = h o g для всех h : B -> C, то f = g
 --     Докажите, что \Prop является когенератором
 
-\func isCogenerator (C : \Type) => \Pi {A B : \Set} (f g : A -> B) (p : \Pi (h : B -> C) -> h o f = h o g) -> f = g
+\func isCogenerator (C : \Type) =>
+  \Pi
+    {A B : \Set}
+    (f g : A -> B)
+    (p : \Pi (h : B -> C) -> h o f = h o g)
+  -> f = g
 
-\func PropIsCogenerator : isCogenerator \Prop => {?}
+\func PropIsCogenerator : isCogenerator \Prop => \lam f g p => ext $
+  \lam a => transport
+      id
+      (pmap (\lam f => f a) (p (\lam g => f a = g)))
+      idp
 
 -- 6b. Тип X называется инъективным, если для любой функции f : A -> X и любой инъекции i : A -> B
 --     существует функция l : B -> X такая, что l o i = f
