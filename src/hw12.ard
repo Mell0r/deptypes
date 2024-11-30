@@ -35,11 +35,9 @@
 
 \data BinNat
   | zero
+  | odd BinNat
   | even BinNat \with {
-    | zero => zero
-  }
-  | odd BinNat \with {
-    | zero => zero
+    zero => zero
   }
 
 -- 4. Докажите, что функция pred сюръективна
