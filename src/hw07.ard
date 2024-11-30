@@ -188,4 +188,8 @@
 --     Верно, что в общем случае существование такого утверждения влечет противоречие
 --     Это легко доказать при помощи исключенного третьего, но утверждение верно и без него
 --     Докажите этот факт
-\func contrProp {A : \Type} (p : A -> Not A) (q : Not A -> A) : Empty => {?}
+\func contrProp {A : \Type} (p : A -> Not A) (q : Not A -> A) : Empty =>
+  \let
+    | aToEmpty : A -> Empty => \lam a => p a a
+    | a : A => q aToEmpty
+  \in p a a
