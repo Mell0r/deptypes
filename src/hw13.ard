@@ -1,31 +1,181 @@
+\import Data.Array (++, Index, index-left, keep, nub, toList)
 \import Data.Bool
+\import Data.List (length)
+\import Data.Or
+\import Equiv.Univalence
 \import Function
+\import Function.Meta
+\import Logic
+\import Logic.Meta
+\import Meta
+\import Order.LinearOrder
+\import Paths
+\import Paths.Meta
+\import Relation.Equivalence
 \import Set
+\import lect11 (Trunc, trunc)
+\import lect12 (isBij)
 \import lect13
 
 -- 1. Докажите, что add x (add x s) = add x s и add x (add y s) = add y (add x s)
 
-\func add-idemp {S : SetSpec} (x : S.A) (s : S) : add x (add x s) = add x s => {?}
+\func add-idemp
+  {S : SetSpec}
+  (x : S.A) (s : S)
+  : add x (add x s) = add x s => setExt (\lam _ => (
+  \lam p => \case addProp p \with {
+    | byLeft a=a' => rewrite a=a' $ addHead
+    | byRight aElemTail => aElemTail
+  },
+  addTail
+))
 
-\func add-swap {S : SetSpec} (x y : S.A) (s : S) : add x (add y s) = add y (add x s) => {?}
-
+\func add-swap
+  {S : SetSpec}
+  (x y : S.A) (s : S)
+  : add x (add y s) = add y (add x s) => setExt (\lam _ => (
+  oneSideAppl y x s,
+  oneSideAppl x y s
+))
+  \where {
+    \func oneSideAppl
+      {S : SetSpec}
+      (x y : S.A) (s : S) {a : S.A}
+      : S.isElem a (S.add y (S.add x s)) -> S.isElem a (S.add x (S.add y s)) =>
+      \lam p => \case addProp p \with {
+        | byLeft a=x => addTail $ rewrite a=x $ addHead
+        | byRight aElemTail => \case addProp aElemTail \with {
+          | byLeft a=y => rewrite a=y $ addHead
+          | byRight aElemTailTail => addTail $ addTail aElemTailTail
+        }
+      }
+  }
 -- 2. Докажите, что множество подмножеств является инстансом SetSpec
 
-\instance subsets {A : \Set} : SetSpec {A} (A -> \Prop) => {?}
+\instance subsets {A : \Set} : SetSpec {A} (A -> \Prop)
+  | isElem a s => s a
+  | setExt p => ext $ \lam a => <->_=.1 $ p a
+  | empty => \lam _ => Empty
+  | emptyProp => id
+  | add aNew s => \lam a => (a = aNew) || s a
+  | addHead => byLeft idp
+  | addTail sa => byRight sa
+  | addProp => id
 
 -- 3. Докажите, что множество подмножеств является наибольшим инстансом, то есть любой другой вкладывается в него
 
-\func subsets-largest (S : SetSpec) : \Sigma (f : S -> S.A -> \Prop) (isInj f) => {?}
+\func subsets-largest
+  (S : SetSpec)
+  : \Sigma (f : S -> S.A -> \Prop) (isInj f) => (
+  \lam s a => S.isElem a s,
+  \lam p => setExt \lam a => <->_=.2 $ pmap (\lam f => f a) p
+)
 
 -- 4. Определите функцию isEmpty для ArraySet и для произвольного конечного множества
 
-\func isEmptyArraySet {A : \Set} (xs : ArraySet A) : Bool => {?}
+\func isEmptyArraySet {A : \Set} (xs : ArraySet A) : Bool => \case xs \with {
+  | in~ xs => \case xs \with {
+    | nil => true
+    | a :: l => false
+  }
+  | ~-equiv xs ys eq => cases (xs arg addPath, ys arg addPath) \with {
+    | nil, _, nil, _ => idp
+    | a :: l, xsNonEmpty, nil, ysEmpty =>
+      \case rewrite xsNonEmpty (EqArray=>nil->nil (EqSymm eq) ysEmpty)
+    | nil, xsEmpty, a :: l, ysNonEmpty =>
+      \case rewrite ysNonEmpty (EqArray=>nil->nil eq xsEmpty)
+    | _ :: _, _, _ :: _, _ => idp
+  }
+} \where {
+  \func EqArray=>nil->nil
+    {A : \Set} {xs ys : Array A}
+    (eq : EqArray xs ys)
+    : xs = nil -> ys = nil \elim xs, ys
+    | nil, nil => id
+    | _ :: _, nil => \lam _ => idp
+    | nil, a :: ys => \lam _ =>
+        \let
+          | aInNil => (eq a).2 $ inP (0, idp)
+          | (i, _) => TruncP.remove (\lam (i, p) _ => \case i) aInNil
+        \in \case i
+    | _ :: _, _ :: _ => \case __
 
-\func isEmptySet {S : FinSetSpec} (s : S) : Bool => {?}
+  \func EqSymm
+    {A : \Set} {xs ys : Array A}
+    (eq : EqArray xs ys)
+    : EqArray ys xs => \lam a => ((eq a).2, (eq a).1)
+}
+
+\func isEmptySet {S : FinSetSpec} (s : S) : Bool =>
+  \have arraySet => rewrite (inv $ arraySet=Set {S}) s
+  \in isEmptyArraySet arraySet
 
 -- 5. Определите функцию union {A : \Set} : S -> S -> S для ArraySet и для произвольного S (удовлетворяющего FinSetSpec)
 
+\func unionSetArray {A : \Set} (s1 s2 : ArraySet A) : ArraySet A
+  | in~ xs, in~ ys => in~ $ xs ++ ys
+  | in~ xs, ~-equiv xs1 ys1 eq => setExt $ unfold isElem $ \lam a => (
+    inner-lemma eq,
+    inner-lemma (isEmptyArraySet.EqSymm eq)
+  )
+  | ~-equiv xs1 ys1 eq, in~ ys => setExt $ unfold isElem $ \lam a => (
+    rewrite (in-++-rev xs1 ys, in-++-rev ys1 ys) $ inner-lemma eq,
+    rewrite (in-++-rev xs1 ys, in-++-rev ys1 ys) $
+    inner-lemma (isEmptyArraySet.EqSymm eq)
+  )
+  \where {
+    \func inner-lemma
+      {A : \Set} {xs xs1 ys1 : Array A} {a : A}
+      (eq : EqArray xs1 ys1) (in : In a (xs ++ xs1))
+      : In a (xs ++ ys1) =>
+      rewrite (<->_=.1 in-++<->in-or) $ \case in-++<->in-or.1 in \with {
+        | byLeft inXs => byLeft inXs
+        | byRight inXs1 => byRight $ (eq a).1 inXs1
+      }
+
+    \func in-++<->in-or
+      {A : \Set} {xs ys : Array A} {a : A}
+      : In a (xs ++ ys) <-> In a xs || In a ys =>
+      (\case __ \with {
+        | inP (ind, p) => \case ++.split-index ind \with {
+          | inl (indL, ind=) => byLeft $ inP $ unfold Index $
+                                               (indL, rewrite ind= at p $ rewrite (++.++_index-left indL) at p $ p)
+          | inr (indR, ind=) => byRight $ inP $ unfold Index $
+                                                (indR, rewrite ind= at p $ rewrite ++.++_index-right at p $ p)
+        }
+      }, \case __ \with {
+        | byLeft (inP (ind, p)) =>
+          inP $ (++.index-left ind, rewriteI p $ ++.++_index-left ind)
+        | byRight (inP (ind, p)) =>
+          inP $ (++.index-right ind, rewriteI p ++.++_index-right)
+      })
+
+    \func in-++-rev-impl
+      {A : \Set} {xs ys : Array A} {a : A}
+      (in : In a (xs ++ ys))
+      : In a (ys ++ xs) => in-++<->in-or.2 $ \case in-++<->in-or.1 in \with {
+      | byLeft inXs => byRight inXs
+      | byRight inYs => byLeft inYs
+    }
+
+    \func in-++-rev
+      {A : \Set} (xs ys : Array A) {a : A}
+      : In a (xs ++ ys) = In a (ys ++ xs) =>
+      <->_=.1 (in-++-rev-impl __, in-++-rev-impl __)
+  }
+
+\func union {S : FinSetSpec} (s1 s2 : S) : S => rewrite (inv $ arraySet=Set)
+    \let
+      | arrayS1 => rewrite (inv $ arraySet=Set {S}) s1
+      | arrayS2 => rewrite (inv $ arraySet=Set {S}) s2
+    \in unionSetArray arrayS1 arrayS2
+
 -- 6. Определите функцию intersection {A : DecSet} : S -> S -> S для ArraySet и для произвольного S (удовлетворяющего FinSetSpec)
+
+-- \func intersection {A : DecSet} (s1 s2 : ArraySet A) : ArraySet A
+--   | in~ xs, in~ ys => in~ $ keep (\lam a => In a ys) xs
+--   | in~ xs, ~-equiv x y r => {?}
+--   | ~-equiv xs1 ys1 r, in~ ys => setExt $ {?}
 
 -- 7. Мы не можем определить функцию size в общем случае, но мы можем определить предикат S -> Nat -> \Prop,
 --    соответствующий \lam xs n => size xs <= n
@@ -33,9 +183,18 @@
 --    b) Определите функцию size из лекции
 --    c) Докажите, что size-le эквивалентно определению через size, если A -- разрешимо и S -- конечно
 
-\func size-le {S : SetSpec} (s : S) (n : Nat) : \Prop => {?}
+\func size-le {S : SetSpec} (s : S) (n : Nat) : \Prop => ∃ (f : Fin n -> S.A)
+    (\Sigma
+      (\Pi (i : Fin n) -> f i `isElem` s)
+      (isInj f))
 
-\func size {S : FinSetSpec} (d : DecSet S.A) (s : S) : Nat => {?}
+-- \func size {S : FinSetSpec} (d : DecSet S.A) (s : S) : Nat =>
+--   \case =-to-Equiv $ arraySet=Set {S} \with {
+--     | (f,ret,ret_f,sec,f_sec) => \case sec s \with {
+--       | in~ a => length $ toList (nub a)
+--       | ~-equiv x y r => {?}
+--     }
+--   }
 
 -- Optional
 -- 8. Определите предикат isFin : \Type -> \Prop так,
